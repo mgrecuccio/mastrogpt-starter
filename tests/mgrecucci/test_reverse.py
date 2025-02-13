@@ -3,5 +3,6 @@ sys.path.append("packages/mgrecucci/reverse")
 import reverse
 
 def test_reverse():
-    res = reverse.reverse({})
-    assert res["output"] == "reverse"
+    args = {"input": "ciao"}
+    res = reverse.reverse(args)
+    assert res["output"] == "oaic"
