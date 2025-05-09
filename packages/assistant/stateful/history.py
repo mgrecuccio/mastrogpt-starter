@@ -1,7 +1,6 @@
 import redis
 import uuid
 import os
-from urllib.parse import urlparse, urlunparse
 
 class History:
     
