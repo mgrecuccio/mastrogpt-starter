@@ -13,6 +13,7 @@ Start with `@[LPM][<size>][<collection>]` to select the model then add `<size>` 
 Models: L=llama P=phi4 M=mistral.
 You can shorten collection names, it will use the first one starting with the name.
 Your query is then passed to the LLM with the sentences for an answer.
+Prefix your query with `~` to trigger the image search.
 """
 
 # Pattern: @<model><size><collection> <optional content>
@@ -59,7 +60,6 @@ def streamlines(args, lines):
       for line in lines:
         time.sleep(0.1)
         msg = {"output": line }
-        #print(msg)
         out += line
         if sock:
           s.sendall(json.dumps(msg).encode("utf-8"))
@@ -81,7 +81,6 @@ def stream(args, lines):
       for line in lines:
         dec = json.loads(line.decode("utf-8")).get("response")
         msg = {"output": dec }
-        #print(msg)
         out += dec
         if sock:
           s.sendall(json.dumps(msg).encode("utf-8"))
@@ -108,26 +107,46 @@ def llm(args, model, prompt):
   return stream(args, lines)
 
 def rag(args):
-  inp = str(args.get('input', ""))
+  res = {}
   out = USAGE
-  if inp != "":
-    opt = parse_query(inp)
-    if opt['content'] == '':
-      db = vdb.VectorDB(args, opt["collection"], shorten=True)
-      lines = [f"model={opt['model']}\n", f"size={opt['size']}\n",f"collection={db.collection}\n",f"({",".join(db.collections)})"]
-      out = streamlines(args, lines)
-    else:
-      db = vdb.VectorDB(args, opt["collection"], shorten=True)
-      res = db.vector_search(opt['content'], limit=opt['size'])
-      prompt = ""
-      if len(res) > 0:
-        prompt += "Consider the following text:\n"
-        for (w,txt) in res:
-          prompt += f"{txt}\n"
-        prompt += "Answer to the following prompt:\n"
-      prompt += f"{opt['content']}"
-        
-      print(prompt)
-      out = llm(args, opt['model'], prompt)
+  inp = str(args.get('input', ""))
 
-  return { "output": out, "streaming": True}
+  if inp != "":
+    img_search = inp.startswith('~')
+    #sanitize input
+    if img_search:
+      inp = (inp.lstrip('~') or inp)
+
+    opt = parse_query(inp)
+    db = vdb.VectorDB(args, opt["collection"], shorten=True)
+    #image rag
+    if img_search:
+      result_set = db.img_vector_search(opt['content'], limit=opt['size'])
+      if len(result_set) > 0 and result_set[0][1] is not None:
+        image_url = result_set[0][1]
+        out = "This is an image matching your query"
+        res['html'] = f"<img src='{image_url}'>"
+      else:
+        out = "No Image matching your description has been found."
+    #text rag
+    else:
+      if opt['content'] == '':
+        db = vdb.VectorDB(args, opt["collection"], shorten=True)
+        lines = [f"model={opt['model']}\n", f"size={opt['size']}\n",f"collection={db.collection}\n",f"({",".join(db.collections)})"]
+        out = streamlines(args, lines)
+      else:
+        db = vdb.VectorDB(args, opt["collection"], shorten=True)
+        result_set = db.vector_search(opt['content'], limit=opt['size'])
+        prompt = ""
+        if len(result_set) > 0:
+          prompt += "Consider the following text:\n"
+          for (w,txt) in result_set:
+            prompt += f"{txt}\n"
+          prompt += "Answer to the following prompt:\n"
+
+        prompt += f"{opt['content']}"
+        out = llm(args, opt['model'], prompt)
+        res['streaming'] = True
+
+  res['output'] = out
+  return res

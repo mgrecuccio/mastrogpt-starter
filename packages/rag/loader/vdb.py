@@ -4,6 +4,7 @@ from pymilvus import MilvusClient, DataType
 MODEL="mxbai-embed-large:latest"
 DIMENSION_EMBEDDING=1024
 DIMENSION_TEXT=4096
+DIMENSION_URL=200
 
 LIMIT=30
 
@@ -32,6 +33,7 @@ class VectorDB:
       schema = self.client.create_schema()
       schema.add_field(field_name="id", datatype=DataType.INT64, is_primary=True, auto_id=True)
       schema.add_field(field_name="text", datatype=DataType.VARCHAR, max_length=DIMENSION_TEXT)
+      schema.add_field(field_name="img_path", datatype=DataType.VARCHAR, max_length=DIMENSION_URL, nullable=True, default_value=None)
       schema.add_field(field_name="embeddings", datatype=DataType.FLOAT_VECTOR, dim=DIMENSION_EMBEDDING)
       
       index_params = self.client.prepare_index_params()
@@ -48,9 +50,12 @@ class VectorDB:
     res = req.post(self.url, json=msg).json()
     return res.get('embedding', [])
 
-  def insert(self, text):
+  def insert(self, text, img_path=None):
     vec = self.embed(text)
-    return self.client.insert(self.collection, {"text":text, "embeddings": vec})
+    if img_path is None:
+      return self.client.insert(self.collection, {"text":text, "embeddings": vec})
+    else:
+      return self.client.insert(self.collection, {"text":text, "embeddings": vec, "img_path": img_path})
   
   def count(self):
     MAX="1000"
@@ -66,7 +71,7 @@ class VectorDB:
       collection_name=self.collection,
       search_params={"metric_type": "IP"},
       anns_field="embeddings", data=[vec],
-      output_fields=["text"],
+      output_fields=["text", "img_path"],
       limit=limit
     )
     res = []
@@ -74,7 +79,8 @@ class VectorDB:
       for item in cur[0]:
         dist = item.get('distance', 0)
         text = item.get("entity", {}).get("text", "")
-        res.append((dist, text))
+        img_path = item.get("entity", {}).get("img_path", "")
+        res.append((dist, text, img_path))
     return res
 
   def remove_by_substring(self, inp):

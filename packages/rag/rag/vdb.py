@@ -3,6 +3,7 @@ from pymilvus import MilvusClient, DataType
 
 MODEL="mxbai-embed-large:latest"
 DIMENSION=1024
+DIMENSION_URL=200
 LIMIT=30
 
 class VectorDB:
@@ -22,7 +23,6 @@ class VectorDB:
 
       if shorten:
         for i in  self.collections:
-          #print(i)
           if i.startswith(collection):
             collection = i 
             break
@@ -40,6 +40,7 @@ class VectorDB:
       schema = self.client.create_schema()
       schema.add_field(field_name="id", datatype=DataType.INT64, is_primary=True, auto_id=True)
       schema.add_field(field_name="text", datatype=DataType.VARCHAR, max_length=DIMENSION)
+      schema.add_field(field_name="img_path", datatype=DataType.VARCHAR, max_length=DIMENSION_URL, nullable=True, default_value=None)
       schema.add_field(field_name="embeddings", datatype=DataType.FLOAT_VECTOR, dim=DIMENSION)
       
       index_params = self.client.prepare_index_params()
@@ -74,6 +75,23 @@ class VectorDB:
         dist = item.get('distance', 0)
         text = item.get("entity", {}).get("text", "")
         res.append((dist, text))
+    return res
+  
+  def img_vector_search(self, inp, limit=LIMIT):
+    vec = self.embed(inp)
+    cur = self.client.search(
+      collection_name=self.collection,
+      search_params={"metric_type": "IP"},
+      anns_field="embeddings", data=[vec],
+      output_fields=["img_path"],
+      limit=limit
+    )
+    res = []
+    if len(cur[0]) > 0:
+      item = cur[0][0]
+      dist = item.get('distance', 0)
+      img_path = item.get("entity", {}).get("img_path", "")
+      res.append((dist, img_path))
     return res
 
   def remove_by_substring(self, inp):
